@@ -111,3 +111,40 @@ The examples below use `curl.exe`, which is available on Windows. Replace the ex
 curl.exe -X POST http://localhost:3000/wallets ` 
 -H "Content-Type: application/json" ` 
 -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance"
+
+### Process Wager (Bet)
+
+Places a bet by debiting the specified amount from the player's wallet. Each request requires a unique `transactionId` for idempotency.
+
+```powershell
+curl.exe -X POST http://localhost:3000/wagers `
+  -H "Content-Type: application/json" `
+  -d '{`
+    "transactionId": "0192f293-8a1a-7b32-8412-2c67c5148fb2",`
+    "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",`
+    "roundId": "round-xyz-789",`
+    "amount": "10.00",`
+    "currency": "BRL"`
+  }'
+```
+
+### Process Settlement (Win / Loss)
+
+Finalizes a wager by applying the outcome to the player's wallet. A settlement must reference the original `roundId` to ensure financial consistency across the transaction history.
+
+```powershell
+curl.exe -X POST http://localhost:3000/settlements `
+  -H "Content-Type: application/json" `
+  -d '{`
+    "transactionId": "0192f295-1f1b-7c45-9a88-1b22fa45e3c3",`
+    "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",`
+    "roundId": "round-xyz-789",`
+    "type": "WIN",`
+    "amount": "25.00",`
+    "currency": "BRL"`
+  }'
+```
+
+## ⚖️ License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
