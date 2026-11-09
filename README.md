@@ -111,6 +111,7 @@ The examples below use `curl.exe`, which is available on Windows. Replace the ex
 curl.exe -X POST http://localhost:3000/wallets ` 
 -H "Content-Type: application/json" ` 
 -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance"
+```
 
 ### Process Wager (Bet)
 
