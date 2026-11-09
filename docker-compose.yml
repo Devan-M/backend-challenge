@@ -1,0 +1,110 @@
+# Shared runtime settings keep all app replicas connected to the same database and queues.
+x-app-common: &app-common
+  build: .
+  environment:
+    PORT: 3000
+    DATABASE_HOST: postgres
+    DATABASE_PORT: 5432
+    DATABASE_NAME: wagering
+    DATABASE_USER: wagering
+    DATABASE_PASSWORD: wagering
+    AWS_REGION: us-east-1
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    SQS_ENDPOINT: http://localstack:4566
+    WAGER_QUEUE_URL: http://localstack:4566/000000000000/wager-transactions.fifo
+    WAGER_DLQ_URL: http://localstack:4566/000000000000/wager-transactions-dlq.fifo
+    EVENTS_QUEUE_URL: http://localstack:4566/000000000000/wagering-events.fifo
+    WAGER_MESSAGE_VISIBILITY_TIMEOUT_SECONDS: ${WAGER_MESSAGE_VISIBILITY_TIMEOUT_SECONDS:-45}
+    SQS_BEFORE_ACK_DELAY_MS: ${SQS_BEFORE_ACK_DELAY_MS:-0}
+  healthcheck:
+    test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 10s
+
+services:
+  # Durable local PostgreSQL instance; named volume preserves state across container restarts.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wagering
+      POSTGRES_USER: wagering
+      POSTGRES_PASSWORD: wagering
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wagering -d wagering"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Local AWS-compatible endpoint used by the SQS consumer and outbox publisher.
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: us-east-1
+      PERSISTENCE: "1"
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -fsS http://localhost:4566/_localstack/health | grep -q sqs"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Creates FIFO input, event, and dead-letter queues after LocalStack is healthy.
+  queue-init:
+    image: amazon/aws-cli:2.24.20
+    depends_on:
+      localstack:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/scripts/init-queues.sh"]
+    volumes:
+      - ./infra/init-queues.sh:/scripts/init-queues.sh:ro
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+
+  # Default API instance, also runs the inbox, reference scheduler, and outbox workers.
+  app:
+    <<: *app-common
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      queue-init:
+        condition: service_completed_successfully
+
+  # Optional independent replicas used by multi-process concurrency/recovery tests.
+  app-2:
+    <<: *app-common
+    profiles: [multi]
+    command: ["bun", "run", "start"]
+    ports:
+      - "3001:3000"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  app-3:
+    <<: *app-common
+    profiles: [multi]
+    command: ["bun", "run", "start"]
+    ports:
+      - "3002:3000"
+    depends_on:
+      app-2:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  localstack-data:
